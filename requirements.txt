@@ -1,0 +1,7 @@
+flask
+pandas
+xlrd
+openpyxl
+gspread
+google-auth
+xlsxwriter

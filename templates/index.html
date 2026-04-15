@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Elegansky | Debt Report System</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1F4E79, #2E86C1);
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+    }
+
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    header span {
+      font-size: 0.9rem;
+      opacity: 0.75;
+      margin-top: 4px;
+      display: block;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 48px auto;
+      padding: 0 24px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+
+    .tab-btn {
+      padding: 12px 28px;
+      border: 2px solid #30363d;
+      background: #161b22;
+      color: #8b949e;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: #1F4E79;
+      border-color: #2E86C1;
+      color: white;
+    }
+
+    .tab-btn:hover:not(.active) {
+      border-color: #58a6ff;
+      color: #58a6ff;
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    .card h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #58a6ff;
+    }
+
+    .upload-area {
+      border: 2px dashed #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #2E86C1;
+      background: rgba(46, 134, 193, 0.07);
+    }
+
+    .upload-area input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .upload-label { font-size: 0.95rem; color: #8b949e; }
+    .upload-label strong { color: #58a6ff; }
+    .file-chosen { margin-top: 10px; font-size: 0.85rem; color: #3fb950; font-weight: 600; }
+
+    .row-uploads {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #1F4E79, #2E86C1);
+      color: white;
+      width: 100%;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-agent {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+    }
+
+    .btn-agent:hover { border-color: #2E86C1; color: #58a6ff; }
+
+    .btn-zip {
+      background: #3fb950;
+      color: #0d1117;
+      padding: 10px 22px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .btn-zip:hover { opacity: 0.85; }
+
+    .results-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 32px;
+      display: none;
+    }
+
+    .results-card.show { display: block; }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .results-header h2 { font-size: 1.1rem; color: #3fb950; }
+
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .agent-item {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .agent-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #e6edf3;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .spinner {
+      display: none;
+      width: 22px; height: 22px;
+      border: 3px solid #30363d;
+      border-top-color: #2E86C1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-bar {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: none;
+    }
+
+    .status-bar.error { background: #2d1118; color: #f85149; border: 1px solid #f85149; display: block; }
+    .status-bar.success { background: #0f2a1a; color: #3fb950; border: 1px solid #3fb950; display: block; }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot-office { background: #FFEB9C; }
+    .dot-police { background: #FFC7CE; }
+    .dot-paid { background: #C6EFCE; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>⚡ ELEGANSKY</h1>
+    <span>Debt Collection Report System</span>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('debt')">📋 Debt Report Generator</button>
+    <button class="tab-btn" onclick="switchTab('comparison')">📊 Morning vs Evening Comparison</button>
+  </div>
+
+  <!-- FUNCTION 1: DEBT REPORT -->
+  <div class="panel active" id="panel-debt">
+    <div class="card">
+      <h2>📥 Upload QuickBooks Export</h2>
+      <div class="upload-area" id="drop-debt">
+        <input type="file" id="file-debt" accept=".xls,.xlsx" onchange="fileChosen('debt')"/>
+        <div class="upload-icon">📂</div>
+        <div class="upload-label">Drag & drop or <strong>click to browse</strong></div>
+        <div class="upload-label">Accepts .xls / .xlsx</div>
+        <div class="file-chosen" id="chosen-debt"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-debt" onclick="generateDebt()" disabled>
+        <span id="spinner-debt" class="spinner"></span>
+        Generate Agent Reports
+      </button>
+      <div class="status-bar" id="status-debt"></div>
+    </div>
+
+    <div class="results-card" id="results-debt">
+      <div class="results-header">
+        <h2>✅ Reports Ready!</h2>
+        <a class="btn btn-zip" href="/api/download-all/debt" download>⬇ Download All (ZIP)</a>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="dot dot-office"></div> Bike in Office</div>
+        <div class="legend-item"><div class="dot dot-police"></div> Bike at Police</div>
+      </div>
+      <div class="agent-grid" id="agent-grid-debt"></div>
+    </div>
+  </div>
+
+  <!-- FUNCTION 2: COMPARISON REPORT -->
+  <div class="panel" id="panel-comparison">
+    <div class="card">
+      <h2>📥 Upload Morning & Evening QuickBooks Exports</h2>
+      <div class="row-uploads">
+        <div>
+          <p style="margin-bottom:10px; font-size:0.9rem; color:#8b949e;">🌅 Morning Export</p>
+          <div class="upload-area" id="drop-morning">
+            <input type="file" id="file-morning" accept=".xls,.xlsx" onchange="fileChosen('morning')"/>
+            <div class="upload-icon">📂</div>
+            <div class="upload-label"><strong>Morning file</strong></div>
+            <div class="file-chosen" id="chosen-morning"></div>
+          </div>
+        </div>
+        <div>
+          <p style="margin-bottom:10px; font-size:0.9rem; color:#8b949e;">🌆 Evening Export</p>
+          <div class="upload-area" id="drop-evening">
+            <input type="file" id="file-evening" accept=".xls,.xlsx" onchange="fileChosen('evening')"/>
+            <div class="upload-icon">📂</div>
+            <div class="upload-label"><strong>Evening file</strong></div>
+            <div class="file-chosen" id="chosen-evening"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-comparison" onclick="generateComparison()" disabled>
+        <span id="spinner-comparison" class="spinner"></span>
+        Generate Comparison Reports
+      </button>
+      <div class="status-bar" id="status-comparison"></div>
+    </div>
+
+    <div class="results-card" id="results-comparison">
+      <div class="results-header">
+        <h2>✅ Comparison Reports Ready!</h2>
+        <a class="btn btn-zip" href="/api/download-all/comparison" download>⬇ Download All (ZIP)</a>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="dot dot-paid"></div> Paid</div>
+        <div class="legend-item"><div class="dot dot-office"></div> Bike in Office</div>
+        <div class="legend-item"><div class="dot dot-police"></div> Bike at Police</div>
+      </div>
+      <div class="agent-grid" id="agent-grid-comparison"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', (i === 0 && tab === 'debt') || (i === 1 && tab === 'comparison'));
+    });
+    document.getElementById('panel-debt').classList.toggle('active', tab === 'debt');
+    document.getElementById('panel-comparison').classList.toggle('active', tab === 'comparison');
+  }
+
+  function fileChosen(type) {
+    const input = document.getElementById('file-' + type);
+    const label = document.getElementById('chosen-' + type);
+    if (input.files[0]) {
+      label.textContent = '✔ ' + input.files[0].name;
+    }
+    // Enable buttons
+    if (type === 'debt') {
+      document.getElementById('btn-debt').disabled = !input.files[0];
+    } else {
+      const m = document.getElementById('file-morning').files[0];
+      const e = document.getElementById('file-evening').files[0];
+      document.getElementById('btn-comparison').disabled = !(m && e);
+    }
+  }
+
+  async function generateDebt() {
+    const file = document.getElementById('file-debt').files[0];
+    if (!file) return;
+
+    setLoading('debt', true);
+    const fd = new FormData();
+    fd.append('file', file);
+
+    try {
+      const res = await fetch('/api/generate-debt-reports', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showResults('debt', data.agents, data.mode);
+      showStatus('debt', 'success', `✅ Generated ${data.agents.length} agent reports successfully!`);
+    } catch (e) {
+      showStatus('debt', 'error', '❌ ' + e.message);
+    } finally {
+      setLoading('debt', false);
+    }
+  }
+
+  async function generateComparison() {
+    const morning = document.getElementById('file-morning').files[0];
+    const evening = document.getElementById('file-evening').files[0];
+    if (!morning || !evening) return;
+
+    setLoading('comparison', true);
+    const fd = new FormData();
+    fd.append('morning', morning);
+    fd.append('evening', evening);
+
+    try {
+      const res = await fetch('/api/generate-comparison-reports', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showResults('comparison', data.agents, data.mode);
+      showStatus('comparison', 'success', `✅ Generated ${data.agents.length} comparison reports!`);
+    } catch (e) {
+      showStatus('comparison', 'error', '❌ ' + e.message);
+    } finally {
+      setLoading('comparison', false);
+    }
+  }
+
+  function showResults(panel, agents, mode) {
+    const grid = document.getElementById('agent-grid-' + panel);
+    const resultsCard = document.getElementById('results-' + panel);
+    grid.innerHTML = '';
+    agents.forEach(agent => {
+      const safe = encodeURIComponent(agent);
+      grid.innerHTML += `
+        <div class="agent-item">
+          <span class="agent-name" title="${agent}">${agent}</span>
+          <a class="btn btn-agent" href="/api/download/${mode}/${safe}" download>⬇</a>
+        </div>`;
+    });
+    resultsCard.classList.add('show');
+  }
+
+  function setLoading(panel, loading) {
+    const btn = document.getElementById('btn-' + panel);
+    const spinner = document.getElementById('spinner-' + panel);
+    btn.disabled = loading;
+    spinner.style.display = loading ? 'inline-block' : 'none';
+  }
+
+  function showStatus(panel, type, msg) {
+    const el = document.getElementById('status-' + panel);
+    el.className = 'status-bar ' + type;
+    el.textContent = msg;
+  }
+</script>
+</body>
+</html>
