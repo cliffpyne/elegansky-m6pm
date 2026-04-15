@@ -83,39 +83,78 @@ def debug_creds():
     return jsonify(result)
 
 
+# def get_flagged_customers():
+#     """Fetch OFFICE and POLICE customer lists from Google Sheet."""
+#     office_customers = set()
+#     police_customers = set()
+#     try:
+#         creds = get_google_creds()
+#         client = gspread.authorize(creds)
+#         sh = client.open_by_key(SHEET_ID)
+
+#         # OFFICE tab
+#         try:
+#             office_ws = sh.worksheet("OFFICE")
+#             office_data = office_ws.get_all_values()
+#             for row in office_data[1:]:  # skip header
+#                 if row and row[0].strip():
+#                     office_customers.add(row[0].strip().upper())
+#         except Exception as e:
+#             print(f"OFFICE tab error: {e}")
+
+#         # POLICE tab
+#         try:
+#             police_ws = sh.worksheet("POLICE")
+#             police_data = police_ws.get_all_values()
+#             for row in police_data[1:]:  # skip header
+#                 if row and row[0].strip():
+#                     police_customers.add(row[0].strip().upper())
+#         except Exception as e:
+#             print(f"POLICE tab error: {e}")
+
+#     except Exception as e:
+#         print(f"Google Sheets error: {e}")
+
+#     return office_customers, police_customers
+
+
+import time
+
+_flagged_cache = None
+_flagged_cache_time = 0
+CACHE_TTL = 300  # refresh every 5 minutes
+
 def get_flagged_customers():
-    """Fetch OFFICE and POLICE customer lists from Google Sheet."""
+    global _flagged_cache, _flagged_cache_time
+    if _flagged_cache and (time.time() - _flagged_cache_time) < CACHE_TTL:
+        return _flagged_cache
+
     office_customers = set()
     police_customers = set()
     try:
         creds = get_google_creds()
         client = gspread.authorize(creds)
         sh = client.open_by_key(SHEET_ID)
-
-        # OFFICE tab
         try:
             office_ws = sh.worksheet("OFFICE")
-            office_data = office_ws.get_all_values()
-            for row in office_data[1:]:  # skip header
+            for row in office_ws.get_all_values()[1:]:
                 if row and row[0].strip():
                     office_customers.add(row[0].strip().upper())
         except Exception as e:
             print(f"OFFICE tab error: {e}")
-
-        # POLICE tab
         try:
             police_ws = sh.worksheet("POLICE")
-            police_data = police_ws.get_all_values()
-            for row in police_data[1:]:  # skip header
+            for row in police_ws.get_all_values()[1:]:
                 if row and row[0].strip():
                     police_customers.add(row[0].strip().upper())
         except Exception as e:
             print(f"POLICE tab error: {e}")
-
     except Exception as e:
         print(f"Google Sheets error: {e}")
 
-    return office_customers, police_customers
+    _flagged_cache = (office_customers, police_customers)
+    _flagged_cache_time = time.time()
+    return _flagged_cache
 
 
 def parse_quickbooks(file):
