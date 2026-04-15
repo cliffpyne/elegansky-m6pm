@@ -141,12 +141,15 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
             return "Bike in Office"
         if n in police_customers:
             return "Bike at Police"
-        if pd.isna(row.get("Evening Amount")) or row.get("Evening Amount", 0) == 0:
+        if pd.isna(row.get("Evening Amount")):
             return "Paid"
         return ""
 
     merged["Status"] = merged.apply(get_status, axis=1)
-    merged["Evening Amount"] = merged["Evening Amount"].fillna("")
+    # Where customer is not in evening (paid), show 0 instead of blank
+    merged["Evening Amount"] = merged["Evening Amount"].apply(
+        lambda x: 0 if pd.isna(x) else x
+    )
     merged["Date"] = date.today().strftime("%d %B %Y")
     merged = merged.sort_values("Morning Amount", ascending=False)
     return merged
