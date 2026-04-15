@@ -35,6 +35,73 @@ import base64
 
 #     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
+
+@app.route("/debug-creds")
+def debug_creds():
+    import traceback
+    result = {}
+
+    # Step 1: env var present?
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    result["1_env_var_found"] = bool(creds_json)
+    result["1_env_var_length"] = len(creds_json) if creds_json else 0
+
+    if not creds_json:
+        return jsonify(result)
+
+    # Step 2: valid JSON?
+    try:
+        info = json.loads(creds_json)
+        result["2_json_parsed"] = True
+    except Exception as e:
+        result["2_json_parsed"] = False
+        result["2_json_error"] = str(e)
+        return jsonify(result)
+
+    # Step 3: required keys present?
+    required = ["type","project_id","private_key","client_email"]
+    for k in required:
+        result[f"3_has_{k}"] = k in info
+
+    # Step 4: private key format
+    pk = info.get("private_key", "")
+    result["4_pk_length"] = len(pk)
+    result["4_starts_with_BEGIN"] = pk.startswith("-----BEGIN")
+    result["4_ends_with_END"] = pk.strip().endswith("-----END PRIVATE KEY-----")
+    result["4_has_escaped_newlines"] = "\\n" in pk
+    result["4_has_real_newlines"] = "\n" in pk
+
+    # Step 5: fix + try loading creds
+    try:
+        info["private_key"] = pk.replace("\\n", "\n")
+        from google.oauth2.service_account import Credentials
+        SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+        result["5_creds_created"] = True
+    except Exception as e:
+        result["5_creds_created"] = False
+        result["5_error"] = str(e)
+        return jsonify(result)
+
+    # Step 6: actually connect to Google Sheets
+    try:
+        import gspread
+        client = gspread.authorize(creds)
+        sh = client.open_by_key(SHEET_ID)
+        sheets = [ws.title for ws in sh.worksheets()]
+        result["6_sheets_connected"] = True
+        result["6_sheet_tabs"] = sheets
+    except Exception as e:
+        result["6_sheets_connected"] = False
+        result["6_error"] = str(e)
+
+    return jsonify(result)
+
+
+
+
+
+
 def get_google_creds():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
