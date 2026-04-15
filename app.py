@@ -15,24 +15,14 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 
 
-# def get_google_creds():
-#     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
-#     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-#     if not creds_json:
-#         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
-#     info = json.loads(creds_json)
-#     return Credentials.from_service_account_info(info, scopes=SCOPES)
-
 def get_google_creds():
     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
     info = json.loads(creds_json)
-    
-    # ✅ Fix: un-escape newlines in the private key (Render stores \n as literal text)
+    # Fix: Render stores \n as literal text, restore real newlines in the private key
     info["private_key"] = info["private_key"].replace("\\n", "\n")
-    
     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 
@@ -210,7 +200,7 @@ def write_agent_excels(summary_df, columns, today_str):
                     elif col_name == "Evening Amount" and val != "":
                         try:
                             worksheet.write_number(row_num, col_num, float(val), money_fmt)
-                        except:
+                        except Exception:
                             worksheet.write(row_num, col_num, val)
                     else:
                         if row_fmt:
@@ -248,17 +238,13 @@ def generate_debt_reports():
 
         files = write_agent_excels(summary, columns, today_str)
 
-        # Return agent list for frontend
         agents = list(files.keys())
 
-        # Save to outputs folder
-        saved = {}
         for agent, data in files.items():
             safe_name = agent.replace("/", "-").replace("\\", "-")
             path = os.path.join(OUTPUT_FOLDER, f"{safe_name}_{today_str}.xlsx")
             with open(path, "wb") as f:
                 f.write(data)
-            saved[agent] = path
 
         return jsonify({"success": True, "agents": agents, "mode": "debt"})
 
