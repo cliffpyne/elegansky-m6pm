@@ -8,8 +8,6 @@ import base64
 from datetime import date
 
 
-
-
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
@@ -20,37 +18,30 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 
 
-import base64
-
-# def get_google_creds():
-#     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-#     if not creds_json:
-#         raise ValueError("GOOGLE_CREDENTIALS_JSON not set.")
-
-#     info = json.loads(creds_json)
-
-#     # fix Render newline issue
-#     if "\\n" in info.get("private_key", ""):
-#         info["private_key"] = info["private_key"].replace("\\n", "\n")
-
-#     return Credentials.from_service_account_info(info, scopes=SCOPES)
+def get_google_creds():
+    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    if not creds_b64:
+        raise ValueError("GOOGLE_CREDENTIALS_B64 not set.")
+    creds_json = base64.b64decode(creds_b64).decode("utf-8")
+    info = json.loads(creds_json)
+    return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 
 @app.route("/debug-creds")
 def debug_creds():
-    import traceback
     result = {}
 
     # Step 1: env var present?
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    result["1_env_var_found"] = bool(creds_json)
-    result["1_env_var_length"] = len(creds_json) if creds_json else 0
+    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    result["1_env_var_found"] = bool(creds_b64)
+    result["1_env_var_length"] = len(creds_b64) if creds_b64 else 0
 
-    if not creds_json:
+    if not creds_b64:
         return jsonify(result)
 
-    # Step 2: valid JSON?
+    # Step 2: decode + parse JSON
     try:
+        creds_json = base64.b64decode(creds_b64).decode("utf-8")
         info = json.loads(creds_json)
         result["2_json_parsed"] = True
     except Exception as e:
@@ -59,7 +50,7 @@ def debug_creds():
         return jsonify(result)
 
     # Step 3: required keys present?
-    required = ["type","project_id","private_key","client_email"]
+    required = ["type", "project_id", "private_key", "client_email"]
     for k in required:
         result[f"3_has_{k}"] = k in info
 
@@ -68,14 +59,9 @@ def debug_creds():
     result["4_pk_length"] = len(pk)
     result["4_starts_with_BEGIN"] = pk.startswith("-----BEGIN")
     result["4_ends_with_END"] = pk.strip().endswith("-----END PRIVATE KEY-----")
-    result["4_has_escaped_newlines"] = "\\n" in pk
-    result["4_has_real_newlines"] = "\n" in pk
 
-    # Step 5: fix + try loading creds
+    # Step 5: try loading creds
     try:
-        info["private_key"] = pk.replace("\\n", "\n")
-        from google.oauth2.service_account import Credentials
-        SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         result["5_creds_created"] = True
     except Exception as e:
@@ -85,7 +71,6 @@ def debug_creds():
 
     # Step 6: actually connect to Google Sheets
     try:
-        import gspread
         client = gspread.authorize(creds)
         sh = client.open_by_key(SHEET_ID)
         sheets = [ws.title for ws in sh.worksheets()]
@@ -96,87 +81,6 @@ def debug_creds():
         result["6_error"] = str(e)
 
     return jsonify(result)
-
-
-
-
-
-
-def get_google_creds():
-    import base64
-    creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
-    if not creds_b64:
-        raise ValueError("GOOGLE_CREDENTIALS_B64 not set.")
-    creds_json = base64.b64decode(creds_b64).decode("utf-8")
-    info = json.loads(creds_json)
-    return Credentials.from_service_account_info(info, scopes=SCOPES)
-
-
-# def get_google_creds():
-#     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
-#     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-#     if not creds_json:
-#         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
-#     info = json.loads(creds_json)
-#     # Fix: Render stores \n as literal text, restore real newlines in the private key
-#     info["private_key"] = info["private_key"].replace("\\n", "\n")
-#     return Credentials.from_service_account_info(info, scopes=SCOPES)
-# def get_google_creds():
-#     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
-#     try:
-#         creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-
-#         if not creds_json:
-#             print("❌ ENV ERROR: GOOGLE_CREDENTIALS_JSON not set")
-#             raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
-
-#         print("✅ ENV FOUND: Length =", len(creds_json))
-
-#         # Try parsing JSON
-#         try:
-#             info = json.loads(creds_json)
-#             print("✅ JSON PARSED SUCCESSFULLY")
-#         except Exception as e:
-#             print("❌ JSON PARSE ERROR:", str(e))
-#             raise
-
-#         # Check required keys
-#         required_keys = ["type", "project_id", "private_key", "client_email"]
-#         for key in required_keys:
-#             if key not in info:
-#                 print(f"❌ MISSING KEY: {key}")
-#                 raise ValueError(f"Missing key: {key}")
-
-#         print("✅ REQUIRED KEYS PRESENT")
-
-#         # Debug private key format (SAFE)
-#         pk = info.get("private_key", "")
-#         print("🔍 PRIVATE KEY CHECK:")
-#         print("   Starts with BEGIN:", pk.startswith("-----BEGIN"))
-#         print("   Ends with END:", pk.strip().endswith("-----END PRIVATE KEY-----"))
-#         print("   Contains \\n:", "\\n" in pk)
-#         print("   Contains real newline:", "\n" in pk)
-#         print("   Length:", len(pk))
-
-#         # Fix newline issue safely
-#         if "\\n" in pk:
-#             info["private_key"] = pk.replace("\\n", "\n")
-#             print("✅ Replaced \\n with real newlines")
-#         else:
-#             print("ℹ️ No \\n replacement needed")
-
-#         # Final credential creation test
-#         try:
-#             creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-#             print("✅ GOOGLE CREDS CREATED SUCCESSFULLY")
-#             return creds
-#         except Exception as e:
-#             print("❌ GOOGLE CREDS CREATION FAILED:", str(e))
-#             raise
-
-#     except Exception as e:
-#         print("🔥 FINAL ERROR in get_google_creds:", str(e))
-#         raise
 
 
 def get_flagged_customers():
@@ -330,7 +234,7 @@ def write_agent_excels(summary_df, columns, today_str):
             police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
             money_fmt = workbook.add_format({"num_format": "#,##0.00"})
 
-            # Write header manually with formatting
+            # Write header row with formatting
             for col_num, col_name in enumerate(columns):
                 worksheet.write(0, col_num, col_name, header_fmt)
                 worksheet.set_column(col_num, col_num, 25)
@@ -361,9 +265,6 @@ def write_agent_excels(summary_df, columns, today_str):
                         else:
                             worksheet.write(row_num, col_num, val)
 
-            # Add date header above table
-            worksheet.write(0, 0, f"Date: {today_str}", header_fmt)
-
         files[agent] = output.getvalue()
     return files
 
@@ -392,7 +293,6 @@ def generate_debt_reports():
         files = write_agent_excels(summary, columns, today_str)
 
         agents = list(files.keys())
-
         for agent, data in files.items():
             safe_name = agent.replace("/", "-").replace("\\", "-")
             path = os.path.join(OUTPUT_FOLDER, f"{safe_name}_{today_str}.xlsx")
