@@ -15,12 +15,24 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SHEET_ID = "1wrM7E9qGKcWJvN4mBwYMpkgp31jlxPGgEYCDsHn0bkc"
 
 
+# def get_google_creds():
+#     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
+#     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+#     if not creds_json:
+#         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
+#     info = json.loads(creds_json)
+#     return Credentials.from_service_account_info(info, scopes=SCOPES)
+
 def get_google_creds():
     """Load Google credentials from environment variable GOOGLE_CREDENTIALS_JSON."""
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set.")
     info = json.loads(creds_json)
+    
+    # ✅ Fix: un-escape newlines in the private key (Render stores \n as literal text)
+    info["private_key"] = info["private_key"].replace("\\n", "\n")
+    
     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 
