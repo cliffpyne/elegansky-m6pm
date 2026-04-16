@@ -219,6 +219,55 @@ def build_summary(df, office_customers, police_customers):
 
 
 
+# def build_comparison(df_morning, df_evening, office_customers, police_customers):
+#     """Build morning vs evening comparison per agent."""
+#     morning = (
+#         df_morning.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Morning Amount"})
+#     )
+
+#     evening = (
+#         df_evening.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Evening Amount"})
+#     )
+
+#     merged = morning.merge(evening, on=["Agent", "CustomerName"], how="left")
+
+#     # Replace NaN evening values with 0
+#     merged["Evening Amount"] = merged["Evening Amount"].apply(
+#         lambda x: 0 if pd.isna(x) else x
+#     )
+
+#     def get_status(row):
+#         n = row["CustomerName"].strip().upper()
+#         morning_val = row.get("Morning Amount", 0)
+#         evening_val = row.get("Evening Amount", 0)
+
+#         # Priority 1: flagged customers
+#         if n in office_customers:
+#             return "Bike in Office"
+#         if n in police_customers:
+#             return "Bike at Police"
+
+#         # Priority 2: payment logic
+#         if evening_val == 0:
+#             return "AMELIPA"
+#         elif morning_val > evening_val:
+#             return "AMEPUNGUZA"
+#         elif morning_val == evening_val:
+#             return "HAJAFATWA"
+
+#         return ""
+
+#     merged["Status"] = merged.apply(get_status, axis=1)
+
+#     merged["Date"] = date.today().strftime("%d %B %Y")
+#     merged = merged.sort_values("Morning Amount", ascending=False)
+
+#     return merged
+
 def build_comparison(df_morning, df_evening, office_customers, police_customers):
     """Build morning vs evening comparison per agent."""
     morning = (
@@ -245,6 +294,10 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
         morning_val = row.get("Morning Amount", 0)
         evening_val = row.get("Evening Amount", 0)
 
+        # 🔴 NEW RULE FIRST (highest priority)
+        if morning_val < 26000:
+            return ""
+
         # Priority 1: flagged customers
         if n in office_customers:
             return "Bike in Office"
@@ -267,6 +320,10 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
     merged = merged.sort_values("Morning Amount", ascending=False)
 
     return merged
+
+
+
+
 
 def write_agent_excels(summary_df, columns, today_str):
     """Write one Excel per agent, return dict {agent_name: bytes}."""
