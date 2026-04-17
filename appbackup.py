@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os, io, json, zipfile
 import base64
-import time
 
 from datetime import date
 
@@ -31,11 +30,16 @@ def get_google_creds():
 @app.route("/debug-creds")
 def debug_creds():
     result = {}
+
+    # Step 1: env var present?
     creds_b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
     result["1_env_var_found"] = bool(creds_b64)
     result["1_env_var_length"] = len(creds_b64) if creds_b64 else 0
+
     if not creds_b64:
         return jsonify(result)
+
+    # Step 2: decode + parse JSON
     try:
         creds_json = base64.b64decode(creds_b64).decode("utf-8")
         info = json.loads(creds_json)
@@ -44,13 +48,19 @@ def debug_creds():
         result["2_json_parsed"] = False
         result["2_json_error"] = str(e)
         return jsonify(result)
+
+    # Step 3: required keys present?
     required = ["type", "project_id", "private_key", "client_email"]
     for k in required:
         result[f"3_has_{k}"] = k in info
+
+    # Step 4: private key format
     pk = info.get("private_key", "")
     result["4_pk_length"] = len(pk)
     result["4_starts_with_BEGIN"] = pk.startswith("-----BEGIN")
     result["4_ends_with_END"] = pk.strip().endswith("-----END PRIVATE KEY-----")
+
+    # Step 5: try loading creds
     try:
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         result["5_creds_created"] = True
@@ -58,6 +68,8 @@ def debug_creds():
         result["5_creds_created"] = False
         result["5_error"] = str(e)
         return jsonify(result)
+
+    # Step 6: actually connect to Google Sheets
     try:
         client = gspread.authorize(creds)
         sh = client.open_by_key(SHEET_ID)
@@ -67,8 +79,46 @@ def debug_creds():
     except Exception as e:
         result["6_sheets_connected"] = False
         result["6_error"] = str(e)
+
     return jsonify(result)
 
+
+# def get_flagged_customers():
+#     """Fetch OFFICE and POLICE customer lists from Google Sheet."""
+#     office_customers = set()
+#     police_customers = set()
+#     try:
+#         creds = get_google_creds()
+#         client = gspread.authorize(creds)
+#         sh = client.open_by_key(SHEET_ID)
+
+#         # OFFICE tab
+#         try:
+#             office_ws = sh.worksheet("OFFICE")
+#             office_data = office_ws.get_all_values()
+#             for row in office_data[1:]:  # skip header
+#                 if row and row[0].strip():
+#                     office_customers.add(row[0].strip().upper())
+#         except Exception as e:
+#             print(f"OFFICE tab error: {e}")
+
+#         # POLICE tab
+#         try:
+#             police_ws = sh.worksheet("POLICE")
+#             police_data = police_ws.get_all_values()
+#             for row in police_data[1:]:  # skip header
+#                 if row and row[0].strip():
+#                     police_customers.add(row[0].strip().upper())
+#         except Exception as e:
+#             print(f"POLICE tab error: {e}")
+
+#     except Exception as e:
+#         print(f"Google Sheets error: {e}")
+
+#     return office_customers, police_customers
+
+
+import time
 
 _flagged_cache = None
 _flagged_cache_time = 0
@@ -78,6 +128,7 @@ def get_flagged_customers():
     global _flagged_cache, _flagged_cache_time
     if _flagged_cache and (time.time() - _flagged_cache_time) < CACHE_TTL:
         return _flagged_cache
+
     office_customers = set()
     police_customers = set()
     try:
@@ -100,13 +151,14 @@ def get_flagged_customers():
             print(f"POLICE tab error: {e}")
     except Exception as e:
         print(f"Google Sheets error: {e}")
+
     _flagged_cache = (office_customers, police_customers)
     _flagged_cache_time = time.time()
     return _flagged_cache
 
 
 def parse_quickbooks(file):
-    """Parse QuickBooks XLS export. Returns DataFrame with invoice details."""
+    """Parse QuickBooks XLS export and return clean DataFrame."""
     df = pd.read_excel(file, engine="xlrd", header=None)
 
     # Find the actual header row (the one containing 'Customer')
@@ -141,15 +193,7 @@ def parse_quickbooks(file):
         df["Balance"].astype(str).str.replace(",", "").str.strip(), errors="coerce"
     ).fillna(0)
 
-    # Invoice Date = column index 0, Invoice Number = column index 2
-    col_names = df.columns.tolist()
-    invoice_date_col = col_names[0]
-    invoice_num_col  = col_names[2]
-
-    df["InvoiceDate"]   = pd.to_datetime(df[invoice_date_col], errors="coerce")
-    df["InvoiceNumber"] = df[invoice_num_col].astype(str).str.strip()
-
-    return df[["Agent", "CustomerName", "Balance", "InvoiceNumber", "InvoiceDate"]]
+    return df[["Agent", "CustomerName", "Balance"]]
 
 
 def build_summary(df, office_customers, police_customers):
@@ -174,37 +218,55 @@ def build_summary(df, office_customers, police_customers):
     return summary
 
 
-def build_invoice_details(df):
-    """
-    Build invoice details DataFrame:
-    - Customers sorted by total debt (highest first)
-    - Within each customer, invoices sorted oldest → newest
-    - Alternating row banding handled at write time
-    """
-    # Customer totals for sorting
-    customer_totals = (
-        df.groupby(["Agent", "CustomerName"])["Balance"]
-        .sum()
-        .reset_index()
-        .rename(columns={"Balance": "CustomerTotal"})
-    )
 
-    df_detail = df.merge(customer_totals, on=["Agent", "CustomerName"])
+# def build_comparison(df_morning, df_evening, office_customers, police_customers):
+#     """Build morning vs evening comparison per agent."""
+#     morning = (
+#         df_morning.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Morning Amount"})
+#     )
 
-    df_detail = df_detail.sort_values(
-        ["Agent", "CustomerTotal", "CustomerName", "InvoiceDate"],
-        ascending=[True, False, True, True]
-    )
+#     evening = (
+#         df_evening.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
+#         .sum()
+#         .rename(columns={"Balance": "Evening Amount"})
+#     )
 
-    df_detail = df_detail.rename(columns={
-        "CustomerName":  "Customer Name",
-        "InvoiceNumber": "Invoice Number",
-        "InvoiceDate":   "Invoice Date",
-        "Balance":       "Amount"
-    })
+#     merged = morning.merge(evening, on=["Agent", "CustomerName"], how="left")
 
-    return df_detail[["Agent", "Customer Name", "Invoice Number", "Invoice Date", "Amount"]]
+#     # Replace NaN evening values with 0
+#     merged["Evening Amount"] = merged["Evening Amount"].apply(
+#         lambda x: 0 if pd.isna(x) else x
+#     )
 
+#     def get_status(row):
+#         n = row["CustomerName"].strip().upper()
+#         morning_val = row.get("Morning Amount", 0)
+#         evening_val = row.get("Evening Amount", 0)
+
+#         # Priority 1: flagged customers
+#         if n in office_customers:
+#             return "Bike in Office"
+#         if n in police_customers:
+#             return "Bike at Police"
+
+#         # Priority 2: payment logic
+#         if evening_val == 0:
+#             return "AMELIPA"
+#         elif morning_val > evening_val:
+#             return "AMEPUNGUZA"
+#         elif morning_val == evening_val:
+#             return "HAJAFATWA"
+
+#         return ""
+
+#     merged["Status"] = merged.apply(get_status, axis=1)
+
+#     merged["Date"] = date.today().strftime("%d %B %Y")
+#     merged = merged.sort_values("Morning Amount", ascending=False)
+
+#     return merged
 
 def build_comparison(df_morning, df_evening, office_customers, police_customers):
     """Build morning vs evening comparison per agent."""
@@ -213,12 +275,16 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
         .sum()
         .rename(columns={"Balance": "Morning Amount"})
     )
+
     evening = (
         df_evening.groupby(["Agent", "CustomerName"], as_index=False)["Balance"]
         .sum()
         .rename(columns={"Balance": "Evening Amount"})
     )
+
     merged = morning.merge(evening, on=["Agent", "CustomerName"], how="left")
+
+    # Replace NaN evening values with 0
     merged["Evening Amount"] = merged["Evening Amount"].apply(
         lambda x: 0 if pd.isna(x) else x
     )
@@ -227,70 +293,69 @@ def build_comparison(df_morning, df_evening, office_customers, police_customers)
         n = row["CustomerName"].strip().upper()
         morning_val = row.get("Morning Amount", 0)
         evening_val = row.get("Evening Amount", 0)
+
+        # 🔴 NEW RULE FIRST (highest priority)
         if morning_val < 26000:
             return ""
+
+        # Priority 1: flagged customers
         if n in office_customers:
             return "Bike in Office"
         if n in police_customers:
             return "Bike at Police"
+
+        # Priority 2: payment logic
         if evening_val == 0:
             return "AMELIPA"
         elif morning_val > evening_val:
             return "AMEPUNGUZA"
         elif morning_val == evening_val:
             return "HAJAFATWA"
+
         return ""
 
     merged["Status"] = merged.apply(get_status, axis=1)
+
     merged["Date"] = date.today().strftime("%d %B %Y")
     merged = merged.sort_values("Morning Amount", ascending=False)
+
     return merged
 
 
-def write_agent_excels(summary_df, columns, today_str, invoice_df=None):
-    """
-    Write one Excel per agent.
-    - Tab 1 "Summary"        : summary report
-    - Tab 2 "Invoice Details": individual invoices (only when invoice_df is provided)
-    Returns dict {agent_name: bytes}
-    """
+
+
+
+def write_agent_excels(summary_df, columns, today_str):
+    """Write one Excel per agent, return dict {agent_name: bytes}."""
     files = {}
     for agent, group in summary_df.groupby("Agent"):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            group[columns].to_excel(writer, index=False, sheet_name="Report")
             workbook = writer.book
+            worksheet = writer.sheets["Report"]
 
-            # ── Shared formats ────────────────────────────────────────
-            header_fmt    = workbook.add_format({
+            # Formatting
+            header_fmt = workbook.add_format({
                 "bold": True, "bg_color": "#1F4E79", "font_color": "white",
                 "border": 1, "align": "center"
             })
-            office_fmt    = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
-            police_fmt    = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-            amelipa_fmt   = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
-            punguza_fmt   = workbook.add_format({"bg_color": "#DDEBF7", "font_color": "#1F4E79"})
-            hajafatwa_fmt = workbook.add_format({"bg_color": "#FCE4D6", "font_color": "#833C00"})
-            money_fmt     = workbook.add_format({"num_format": "#,##0.00"})
-            date_fmt      = workbook.add_format({"num_format": "dd/mm/yyyy"})
-            band_fmt      = workbook.add_format({"bg_color": "#EBF3FB"})
+            paid_fmt = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#276221"})
+            office_fmt = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C5700"})
+            police_fmt = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+            money_fmt = workbook.add_format({"num_format": "#,##0.00"})
 
-            # ── TAB 1: Summary ────────────────────────────────────────
-            group[columns].to_excel(writer, index=False, sheet_name="Summary")
-            ws1 = writer.sheets["Summary"]
-
+            # Write header row with formatting
             for col_num, col_name in enumerate(columns):
-                ws1.write(0, col_num, col_name, header_fmt)
-                ws1.set_column(col_num, col_num, 25)
+                worksheet.write(0, col_num, col_name, header_fmt)
+                worksheet.set_column(col_num, col_num, 25)
 
+            # Write data rows with conditional formatting
             for row_num, (_, row) in enumerate(group[columns].iterrows(), start=1):
                 status = str(row.get("Status", ""))
                 row_fmt = None
-                if status in ("Paid", "AMELIPA"):
-                    row_fmt = amelipa_fmt
-                elif status == "AMEPUNGUZA":
-                    row_fmt = punguza_fmt
-                elif status == "HAJAFATWA":
-                    row_fmt = hajafatwa_fmt
+                if status == "Paid":
+                    row_fmt = paid_fmt
                 elif status == "Bike in Office":
                     row_fmt = office_fmt
                 elif status == "Bike at Police":
@@ -298,68 +363,18 @@ def write_agent_excels(summary_df, columns, today_str, invoice_df=None):
 
                 for col_num, col_name in enumerate(columns):
                     val = row[col_name]
-                    if col_name in ("Total Debt", "Morning Amount"):
-                        ws1.write_number(row_num, col_num, float(val) if val != "" else 0, money_fmt)
-                    elif col_name == "Evening Amount":
+                    if col_name in ("Total Debt", "Morning Amount") and val != "":
+                        worksheet.write_number(row_num, col_num, float(val) if val != "" else 0, money_fmt)
+                    elif col_name == "Evening Amount" and val != "":
                         try:
-                            ws1.write_number(row_num, col_num, float(val), money_fmt)
+                            worksheet.write_number(row_num, col_num, float(val), money_fmt)
                         except Exception:
-                            ws1.write(row_num, col_num, val)
+                            worksheet.write(row_num, col_num, val)
                     else:
                         if row_fmt:
-                            ws1.write(row_num, col_num, val, row_fmt)
+                            worksheet.write(row_num, col_num, val, row_fmt)
                         else:
-                            ws1.write(row_num, col_num, val)
-
-            # ── TAB 2: Invoice Details ────────────────────────────────
-            if invoice_df is not None:
-                agent_invoices = invoice_df[invoice_df["Agent"] == agent].copy()
-                detail_cols = ["Customer Name", "Invoice Number", "Invoice Date", "Amount"]
-
-                # Write empty sheet then manually write rows
-                agent_invoices[detail_cols].to_excel(
-                    writer, index=False, sheet_name="Invoice Details"
-                )
-                ws2 = writer.sheets["Invoice Details"]
-
-                # Header row
-                for col_num, col_name in enumerate(detail_cols):
-                    ws2.write(0, col_num, col_name, header_fmt)
-                    ws2.set_column(col_num, col_num, 30)
-
-                # Data rows with alternating band per customer
-                current_customer = None
-                band = False
-
-                for row_num, (_, row) in enumerate(agent_invoices[detail_cols].iterrows(), start=1):
-                    cust = row["Customer Name"]
-                    if cust != current_customer:
-                        current_customer = cust
-                        band = not band
-
-                    for col_num, col_name in enumerate(detail_cols):
-                        val = row[col_name]
-                        if col_name == "Amount":
-                            ws2.write_number(
-                                row_num, col_num,
-                                float(val) if pd.notna(val) else 0,
-                                money_fmt
-                            )
-                        elif col_name == "Invoice Date":
-                            if pd.notna(val):
-                                ws2.write_datetime(
-                                    row_num, col_num,
-                                    val.to_pydatetime(),
-                                    date_fmt
-                                )
-                            else:
-                                ws2.write(row_num, col_num, "")
-                        else:
-                            fmt = band_fmt if band else None
-                            if fmt:
-                                ws2.write(row_num, col_num, str(val) if pd.notna(val) else "", fmt)
-                            else:
-                                ws2.write(row_num, col_num, str(val) if pd.notna(val) else "")
+                            worksheet.write(row_num, col_num, val)
 
         files[agent] = output.getvalue()
     return files
@@ -372,26 +387,21 @@ def index():
 
 @app.route("/api/generate-debt-reports", methods=["POST"])
 def generate_debt_reports():
-    """Function 1: Single QuickBooks export → per-agent debt reports (2 tabs)."""
+    """Function 1: Single QuickBooks export → per-agent debt reports."""
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
         office_customers, police_customers = get_flagged_customers()
-
         df = parse_quickbooks(file)
-
-        # Tab 1: summary
         summary = build_summary(df, office_customers, police_customers)
+
         today_str = date.today().strftime("%d %B %Y")
         summary = summary.rename(columns={"CustomerName": "Customer Name"})
         columns = ["Date", "Agent", "Customer Name", "Total Debt", "Status"]
 
-        # Tab 2: invoice details
-        invoice_details = build_invoice_details(df)
-
-        files = write_agent_excels(summary, columns, today_str, invoice_df=invoice_details)
+        files = write_agent_excels(summary, columns, today_str)
 
         agents = list(files.keys())
         for agent, data in files.items():
@@ -426,8 +436,7 @@ def generate_comparison_reports():
         today_str = date.today().strftime("%d %B %Y")
         columns = ["Date", "Agent", "Customer Name", "Morning Amount", "Evening Amount", "Status"]
 
-        # Comparison reports: no invoice details tab
-        files = write_agent_excels(comparison, columns, today_str, invoice_df=None)
+        files = write_agent_excels(comparison, columns, today_str)
 
         agents = list(files.keys())
         for agent, data in files.items():
